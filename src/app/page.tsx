@@ -176,8 +176,10 @@ export default function Home() {
                 <Card>
                     <CardContent className="p-4 space-y-4">
                         <Input type="file" accept=".xlsx,.csv" onChange={handleFileUpload} />
+                        <div className="flex justify-between">
                         <Button onClick={handleProcessFile} disabled={!file}>Process File</Button>
                         {processedData && <Button onClick={handleDownloadCSV}>Download CSV</Button>}
+                        </div>
                     </CardContent>
                 </Card>
             </main>

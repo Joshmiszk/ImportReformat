@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ChangeEvent } from 'react';
 import * as XLSX from 'xlsx';
-import OpenAI from "openai";
 
 // Types and Constants
 type BorrowerStage = "Active Lead" | "Business Partner Only" | "Prospect" | "Client";
@@ -18,108 +17,92 @@ const FILE_CONSTANTS = {
     SHEET_NAME: "Formatted Data",
 } as const;
 
-interface RawRow {
-    "Full Name"?: string;
-    "Date"?: string;
-    "BorrowerStage.Name"?: string;
-    "PartnerType.Name"?: string;
-    "LeadSource"?: string;
-    "Campaign"?: string;
-    "Email"?: string;
-    "Phone"?: string;
-    "Address"?: string;
-    "City"?: string;
-    "Province"?: string;
-    "Postal Code"?: string;
-}
-
 interface FormattedRow {
     FirstName: string;
     LastName: string;
     Email: string;
     Phone: string;
-    Address: string;
-    City: string;
-    Province: string;
-    PostalCode: string;
-    DateOfBirth: string;
-    "BorrowerStage.Name": BorrowerStage;
-    "PartnerType.Name": string;
-    LeadSource: string;
-    Campaign: string;
+    Address?: string;
+    City?: string;
+    Province?: string;
+    PostalCode?: string;
+    DateOfBirth?: string;
+    "BorrowerStage.Name"?: BorrowerStage;
+    "PartnerType.Name"?: string;
+    LeadSource?: string;
+    Campaign?: string;
 }
 
 class ContactDataProcessor {
-    private readonly openai: OpenAI;
+    private formatRow(row: any): FormattedRow {
+        // Extract First and Last Name
+        let FirstName = "";
+        let LastName = "";
+        if (row[Object.keys(row)[0]]) {
+            const nameParts = row[Object.keys(row)[0]].trim().split(" ");
+            FirstName = nameParts.length > 1 ? nameParts[0] : row[Object.keys(row)[0]];
+            LastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
+        }
 
-    constructor() {
-        this.openai = new OpenAI({ apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY, dangerouslyAllowBrowser: true});
-    }
+        // Standardize Date of Birth
+        let DateOfBirth = "";
+        if (row[Object.keys(row)[1]]) {
+            const rawDOB = row[Object.keys(row)[1]].toString();
+            const parsedDate = new Date(rawDOB);
+            if (!isNaN(parsedDate.getTime())) {
+                DateOfBirth = parsedDate.toISOString().split("T")[0];
+            } else {
+                DateOfBirth = rawDOB;
+            }
+        }
 
-    private formatRow(row: RawRow): FormattedRow {
-        const [FirstName, LastName] = row["Full Name"]?.split(" ") || ["", ""];
-        const DateOfBirth = row["Date"]
-            ? new Date(row["Date"]).toISOString().split("T")[0]
-            : "";
-
-        const stageName = row["BorrowerStage.Name"] as BorrowerStage;
-        const BorrowerStageName = FILE_CONSTANTS.VALID_STAGES.includes(stageName)
-            ? stageName
-            : FILE_CONSTANTS.DEFAULT_STAGE;
+        // Address processing with flexible parsing
+        let Address = "", City = "", Province = "", PostalCode = "";
+        if (row["Address"]) {
+            let addressParts = row["Address"].split(/[,\n]/).map(part => part.trim());
+            if (addressParts.length < 3) {
+                const spaceParts = row["Address"].split(/\s+/);
+                PostalCode = spaceParts.pop() || "";
+                Province = spaceParts.pop() || "";
+                City = spaceParts.pop() || "";
+                Address = spaceParts.join(" ");
+            } else {
+                Address = addressParts[0] || "";
+                City = addressParts[1] || "";
+                Province = addressParts[2] || "";
+                PostalCode = addressParts.length > 3 ? addressParts[3] : "";
+            }
+        }
 
         return {
             FirstName,
             LastName,
-            Email: row["Email"] || "",
-            Phone: row["Phone"] || "",
-            Address: row["Address"] || "",
-            City: row["City"] || "",
-            Province: row["Province"] || "",
-            PostalCode: row["Postal Code"] || "",
+            Email: row[Object.keys(row)[3]] || "",
+            Phone: row[Object.keys(row)[2]] || "",
+            Address,
+            City,
+            Province,
+            PostalCode,
             DateOfBirth,
-            "BorrowerStage.Name": BorrowerStageName,
+            "BorrowerStage.Name": FILE_CONSTANTS.VALID_STAGES.includes(row["BorrowerStage.Name"]) ? row["BorrowerStage.Name"] as BorrowerStage : FILE_CONSTANTS.DEFAULT_STAGE,
             "PartnerType.Name": row["PartnerType.Name"] || "",
             LeadSource: row["LeadSource"] || "",
             Campaign: row["Campaign"] || "",
         };
     }
 
-    private async enhanceWithAI(data: FormattedRow[]): Promise<FormattedRow[]> {
-        try {
-            const response = await this.openai.chat.completions.create({
-                model: "gpt-4",
-                messages: [
-                    { role: "system", content: "You are a helpful assistant that formats and corrects contact data for a CRM." },
-                    { role: "user", content: `Format and clean the following contact data: ${JSON.stringify(data)}` }
-                ]
-            });
-
-            const content = response.choices[0].message.content;
-            if (!content) {
-                console.warn("OpenAI returned empty content");
-                return data;
-            }
-
-            return JSON.parse(content) as FormattedRow[];
-        } catch (error) {
-            console.error("OpenAI API Error:", error);
-            return data;
-        }
-    }
-
-
     async processFile(file: File): Promise<FormattedRow[]> {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = async (e: ProgressEvent<FileReader>) => {
+            reader.onload = (e: ProgressEvent<FileReader>) => {
                 try {
                     const data = new Uint8Array(e.target?.result as ArrayBuffer);
                     const workbook = XLSX.read(data, { type: "array" });
                     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                    const rawData = XLSX.utils.sheet_to_json<RawRow>(sheet);
+                    const rawData = XLSX.utils.sheet_to_json(sheet);
+
                     const formattedData = rawData.map(row => this.formatRow(row));
-                    const enhancedData = await this.enhanceWithAI(formattedData);
-                    resolve(enhancedData);
+                    resolve(formattedData);
                 } catch (error) {
                     reject(error);
                 }
@@ -129,7 +112,6 @@ class ContactDataProcessor {
             };
 
             reader.readAsArrayBuffer(file);
-
         });
     }
 
@@ -148,10 +130,7 @@ export default function Home() {
 
     const handleFileUpload = (event: ChangeEvent<HTMLInputElement>) => {
         if (!event.target.files) return;
-        const uploadedFile = event.target.files[0];
-        if (uploadedFile) {
-            setFile(uploadedFile);
-        }
+        setFile(event.target.files[0]);
     };
 
     const handleProcessFile = async () => {
@@ -164,28 +143,24 @@ export default function Home() {
         }
     };
 
-
     const handleDownloadCSV = () => {
         if (!processedData) return;
         processor.exportToCSV(processedData);
     };
 
     return (
-        <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
+        <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
             <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
                 <Card>
                     <CardContent className="p-4 space-y-4">
                         <Input type="file" accept=".xlsx,.csv" onChange={handleFileUpload} />
                         <div className="flex justify-between">
-                        <Button onClick={handleProcessFile} disabled={!file}>Process File</Button>
-                        {processedData && <Button onClick={handleDownloadCSV}>Download CSV</Button>}
+                            <Button onClick={handleProcessFile} disabled={!file}>Process File</Button>
+                            {processedData && <Button onClick={handleDownloadCSV}>Download CSV</Button>}
                         </div>
                     </CardContent>
                 </Card>
             </main>
-            <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-                <div>Test</div>
-            </footer>
         </div>
     );
 }

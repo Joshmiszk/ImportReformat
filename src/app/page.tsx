@@ -18,14 +18,17 @@ const FILE_CONSTANTS = {
 } as const;
 
 interface FormattedRow {
+    TempNote?: string;
+    FirmName?: string;
+    Unit?: string;
     FirstName: string;
     LastName: string;
     Email: string;
     Phone: string;
-    Address?: string;
+    Street?: string;
     City?: string;
-    Province?: string;
-    PostalCode?: string;
+    ProvinceState?: string;
+    PostalCodeZip?: string;
     DateOfBirth?: string;
     "BorrowerStage.Name"?: BorrowerStage;
     "PartnerType.Name"?: string;
@@ -74,6 +77,15 @@ class ContactDataProcessor {
             }
         }
 
+        let Unit = row["Unit"] || "";
+        let FirmName = Object.keys(row).find(key => key.toLowerCase().includes("firm") || key.toLowerCase().includes("company")) ? row[Object.keys(row).find(key => key.toLowerCase().includes("firm") || key.toLowerCase().includes("company"))!] : "";
+        let PartnerTypeField = Object.keys(row).find(key => key.toLowerCase().includes("business") || key.toLowerCase().includes("partner"));
+        let PartnerType = PartnerTypeField ? row[PartnerTypeField] : "";
+        let noteFields = Object.keys(row).filter(key => key.toLowerCase().includes("note"));
+        let noteDate = noteFields.find(field => field.toLowerCase().includes("date")) ? row[noteFields.find(field => field.toLowerCase().includes("date"))!] : "";
+        let noteTitle = noteFields.find(field => field.toLowerCase().includes("title")) ? row[noteFields.find(field => field.toLowerCase().includes("title"))!] : "";
+        let noteContent = noteFields.find(field => field.toLowerCase().includes("description") || field.toLowerCase().includes("note")) ? row[noteFields.find(field => field.toLowerCase().includes("description") || field.toLowerCase().includes("note"))!] : "";
+        let TempNote = [noteDate, noteTitle, noteContent].filter(val => val).join(" - ");
         return {
             FirstName,
             LastName,
@@ -84,10 +96,13 @@ class ContactDataProcessor {
             Province,
             PostalCode,
             DateOfBirth,
-            "BorrowerStage.Name": FILE_CONSTANTS.VALID_STAGES.includes(row["BorrowerStage.Name"]) ? row["BorrowerStage.Name"] as BorrowerStage : FILE_CONSTANTS.DEFAULT_STAGE,
-            "PartnerType.Name": row["PartnerType.Name"] || "",
-            LeadSource: row["LeadSource"] || "",
+            "BorrowerStage.Name": PartnerType ? "Business Partner Only" : (FILE_CONSTANTS.VALID_STAGES.includes(row["BorrowerStage.Name"]) ? row["BorrowerStage.Name"] as BorrowerStage : FILE_CONSTANTS.DEFAULT_STAGE),
+            "PartnerType.Name": PartnerType,
+            LeadSource: row["Lead Source"] || row["LeadSource"] || "",
             Campaign: row["Campaign"] || "",
+            TempNote,
+            FirmName,
+            Unit,
         };
     }
 

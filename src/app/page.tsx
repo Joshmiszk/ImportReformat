@@ -34,24 +34,30 @@ interface FormattedRow {
     "PartnerType.Name"?: string;
     LeadSource?: string;
     Campaign?: string;
-    FirmName?: string;
 }
 
 class ContactDataProcessor {
+    // Helper function to get column value dynamically by column name
+    private getColumnValue(row: any, columnName: string): string {
+        const foundColumn = Object.keys(row).find(key => key.toLowerCase().includes(columnName.toLowerCase()));
+        return foundColumn ? row[foundColumn] : "";
+    }
+
     private formatRow(row: any): FormattedRow {
-        // Extract First and Last Name
+        // Extract First and Last Name (now using dynamic header search)
         let FirstName = "";
         let LastName = "";
-        if (row[Object.keys(row)[0]]) {
-            const nameParts = row[Object.keys(row)[0]].trim().split(" ");
-            FirstName = nameParts.length > 1 ? nameParts[0] : row[Object.keys(row)[0]];
-            LastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
+        const fullName = this.getColumnValue(row, "First name") + " " + this.getColumnValue(row, "Last name");
+        if (fullName.trim()) {
+            const nameParts = fullName.trim().split(" ");
+            FirstName = nameParts[0];
+            LastName = nameParts.slice(1).join(" ");
         }
 
-        // Standardize Date of Birth
+        // Standardize Date of Birth (looking for the appropriate column by name)
         let DateOfBirth = "";
-        if (row[Object.keys(row)[1]]) {
-            const rawDOB = row[Object.keys(row)[1]].toString();
+        const rawDOB = this.getColumnValue(row, "Date Registered"); // Assuming date is in the "Date Registered" column
+        if (rawDOB) {
             const parsedDate = new Date(rawDOB);
             if (!isNaN(parsedDate.getTime())) {
                 DateOfBirth = parsedDate.toISOString().split("T")[0];
@@ -60,50 +66,38 @@ class ContactDataProcessor {
             }
         }
 
-        // Address processing with flexible parsing
-        let Address = "", City = "", Province = "", PostalCode = "";
-        if (row["Address"]) {
-            let addressParts = row["Address"].split(/[,\n]/).map(part => part.trim());
-            if (addressParts.length < 3) {
-                const spaceParts = row["Address"].split(/\s+/);
-                PostalCode = spaceParts.pop() || "";
-                Province = spaceParts.pop() || "";
-                City = spaceParts.pop() || "";
-                Address = spaceParts.join(" ");
-            } else {
-                Address = addressParts[0] || "";
-                City = addressParts[1] || "";
-                Province = addressParts[2] || "";
-                PostalCode = addressParts.length > 3 ? addressParts[3] : "";
-            }
-        }
+        // Address Processing (dynamic header recognition for address-related fields)
+        let Street = this.getColumnValue(row, "Street") || "";
+        let City = this.getColumnValue(row, "City") || "";
+        let ProvinceState = this.getColumnValue(row, "ProvinceState") || "";
+        let PostalCodeZip = this.getColumnValue(row, "PostalCodeZip") || "";
 
-        let Unit = row["Unit"] || "";
-        let FirmName = Object.keys(row).find(key => key.toLowerCase().includes("firm") || key.toLowerCase().includes("company")) ? row[Object.keys(row).find(key => key.toLowerCase().includes("firm") || key.toLowerCase().includes("company"))!] : "";
-        let PartnerTypeField = Object.keys(row).find(key => key.toLowerCase().includes("business") || key.toLowerCase().includes("partner"));
-        let PartnerType = PartnerTypeField ? row[PartnerTypeField] : "";
-        let noteFields = Object.keys(row).filter(key => key.toLowerCase().includes("note"));
-        let noteDate = noteFields.find(field => field.toLowerCase().includes("date")) ? row[noteFields.find(field => field.toLowerCase().includes("date"))!] : "";
-        let noteTitle = noteFields.find(field => field.toLowerCase().includes("title")) ? row[noteFields.find(field => field.toLowerCase().includes("title"))!] : "";
-        let noteContent = noteFields.find(field => field.toLowerCase().includes("description") || field.toLowerCase().includes("note")) ? row[noteFields.find(field => field.toLowerCase().includes("description") || field.toLowerCase().includes("note"))!] : "";
-        let TempNote = [noteDate, noteTitle, noteContent].filter(val => val).join(" - ");
+        // Other fields
+        const Email = this.getColumnValue(row, "Email");
+        const Phone = this.getColumnValue(row, "Phone number");
+        const FirmName = this.getColumnValue(row, "Company name"); // Assuming Firm name is in the "Company name" column
+        const PartnerType = this.getColumnValue(row, "Profession"); // Assuming this is the "Partner Type"
+        
+        // Generate TempNote if any note-related fields exist
+        const TempNote = this.getColumnValue(row, "Tag"); // Assuming tag is used for notes here
+
+        // Return formatted row
         return {
             FirstName,
             LastName,
-            Email: row[Object.keys(row)[3]] || "",
-            Phone: row[Object.keys(row)[2]] || "",
-            Address,
+            Email,
+            Phone,
+            Street,
             City,
-            Province,
-            PostalCode,
+            ProvinceState,
+            PostalCodeZip,
             DateOfBirth,
-            "BorrowerStage.Name": PartnerType ? "Business Partner Only" : (FILE_CONSTANTS.VALID_STAGES.includes(row["BorrowerStage.Name"]) ? row["BorrowerStage.Name"] as BorrowerStage : FILE_CONSTANTS.DEFAULT_STAGE),
+            "BorrowerStage.Name": FILE_CONSTANTS.DEFAULT_STAGE, // Default if not specified
             "PartnerType.Name": PartnerType,
-            LeadSource: row["Lead Source"] || row["LeadSource"] || "",
-            Campaign: row["Campaign"] || "",
+            LeadSource: "", // Add logic if needed for lead source
+            Campaign: "",   // Add logic if needed for campaign
             TempNote,
             FirmName,
-            Unit,
         };
     }
 

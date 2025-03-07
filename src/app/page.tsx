@@ -34,6 +34,7 @@ interface FormattedRow {
     "PartnerType.Name"?: string;
     LeadSource?: string;
     Campaign?: string;
+    FirmName?: string;
 }
 
 class ContactDataProcessor {

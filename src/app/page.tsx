@@ -44,7 +44,7 @@ class ContactDataProcessor {
     }
 
     private formatRow(row: any): FormattedRow {
-        // Extract First and Last Name (now using dynamic header search)
+        // Extract First and Last Name (using dynamic header search)
         let FirstName = "";
         let LastName = "";
         const fullName = this.getColumnValue(row, "First name") + " " + this.getColumnValue(row, "Last name");
@@ -67,7 +67,7 @@ class ContactDataProcessor {
         }
 
         // Address Processing (dynamic header recognition for address-related fields)
-        let Street = this.getColumnValue(row, "Street") || "";
+        let Street = this.getColumnValue(row, "Street") || ""; // Changed "Address" to "Street"
         let City = this.getColumnValue(row, "City") || "";
         let ProvinceState = this.getColumnValue(row, "ProvinceState") || "";
         let PostalCodeZip = this.getColumnValue(row, "PostalCodeZip") || "";
@@ -81,13 +81,13 @@ class ContactDataProcessor {
         // Generate TempNote if any note-related fields exist
         const TempNote = this.getColumnValue(row, "Tag"); // Assuming tag is used for notes here
 
-        // Return formatted row
-        return {
+        // Prepare the final result object
+        let result: FormattedRow = {
             FirstName,
             LastName,
             Email,
             Phone,
-            Street,
+            Street,  // Now correctly labeled as "Street"
             City,
             ProvinceState,
             PostalCodeZip,
@@ -99,6 +99,15 @@ class ContactDataProcessor {
             TempNote,
             FirmName,
         };
+
+        // Iterate over the row and add any unmapped columns at the end of the result
+        Object.keys(row).forEach((key) => {
+            if (!result.hasOwnProperty(key)) {
+                result[key] = row[key]; // Add extra columns not already included
+            }
+        });
+
+        return result;
     }
 
     async processFile(file: File): Promise<FormattedRow[]> {

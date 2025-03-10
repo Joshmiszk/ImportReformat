@@ -7,6 +7,12 @@ import { Button } from "@/components/ui/button";
 import { ChangeEvent } from 'react';
 import * as XLSX from 'xlsx';
 
+// Helper function to get column value dynamically by column name
+const getColumnValue = (row: any, columnName: string): string => {
+    const foundColumn = Object.keys(row).find(key => key.toLowerCase().includes(columnName.toLowerCase()));
+    return foundColumn ? row[foundColumn] : "";
+};
+
 // Types and Constants
 type BorrowerStage = "Active Lead" | "Business Partner Only" | "Prospect" | "Client";
 
@@ -27,8 +33,8 @@ interface FormattedRow {
     Phone: string;
     Street?: string;
     City?: string;
-    ProvinceState?: string;
-    PostalCodeZip?: string;
+    ProvinceState?: string; // Changed from "Province"
+    PostalCodeZip?: string; // Changed from "PostalCode"
     DateOfBirth?: string;
     "BorrowerStage.Name"?: BorrowerStage;
     "PartnerType.Name"?: string;
@@ -37,61 +43,76 @@ interface FormattedRow {
 }
 
 class ContactDataProcessor {
-    // Helper function to get column value dynamically by column name
-    private getColumnValue(row: any, columnName: string): string {
-        const foundColumn = Object.keys(row).find(key => key.toLowerCase().includes(columnName.toLowerCase()));
-        return foundColumn ? row[foundColumn] : "";
+    // Helper function to check if the column name suggests it is a "Date of Birth"
+    private isDateOfBirthField(columnName: string): boolean {
+        const keywords = ["birth", "dob", "date of birth", "birth date"];
+        return keywords.some(keyword => columnName.toLowerCase().includes(keyword));
+    }
+
+    // Helper function to check if the column name suggests it is a "Phone"
+    private isPhoneField(columnName: string): boolean {
+        const keywords = ["phone", "mobile", "contact", "telephone"];
+        return keywords.some(keyword => columnName.toLowerCase().includes(keyword));
     }
 
     private formatRow(row: any): FormattedRow {
         // Extract First and Last Name (using dynamic header search)
         let FirstName = "";
         let LastName = "";
-        const fullName = this.getColumnValue(row, "First name") + " " + this.getColumnValue(row, "Last name");
+        const fullName = getColumnValue(row, "First name") + " " + getColumnValue(row, "Last name");
         if (fullName.trim()) {
             const nameParts = fullName.trim().split(" ");
             FirstName = nameParts[0];
             LastName = nameParts.slice(1).join(" ");
         }
 
-        // Standardize Date of Birth (looking for the appropriate column by name)
+        // Dynamically detect Date of Birth based on the column name using heuristics
         let DateOfBirth = "";
-        const rawDOB = this.getColumnValue(row, "Date Registered"); // Assuming date is in the "Date Registered" column
-        if (rawDOB) {
-            const parsedDate = new Date(rawDOB);
-            if (!isNaN(parsedDate.getTime())) {
-                DateOfBirth = parsedDate.toISOString().split("T")[0];
-            } else {
-                DateOfBirth = rawDOB;
+        Object.keys(row).forEach((key) => {
+            if (this.isDateOfBirthField(key)) {
+                const rawDOB = row[key];
+                const parsedDate = new Date(rawDOB);
+                if (!isNaN(parsedDate.getTime())) {
+                    DateOfBirth = parsedDate.toISOString().split("T")[0];
+                } else {
+                    DateOfBirth = rawDOB;
+                }
             }
-        }
+        });
+
+        // Dynamically detect Phone Number based on the column name using heuristics
+        let Phone = "";
+        Object.keys(row).forEach((key) => {
+            if (this.isPhoneField(key)) {
+                Phone = row[key];  // Assuming the phone number is in this column
+            }
+        });
 
         // Address Processing (dynamic header recognition for address-related fields)
-        let Street = this.getColumnValue(row, "Street") || ""; // Changed "Address" to "Street"
-        let City = this.getColumnValue(row, "City") || "";
-        let ProvinceState = this.getColumnValue(row, "ProvinceState") || "";
-        let PostalCodeZip = this.getColumnValue(row, "PostalCodeZip") || "";
+        let Street = getColumnValue(row, "Street") || ""; // Changed "Address" to "Street"
+        let City = getColumnValue(row, "City") || "";
+        let ProvinceState = getColumnValue(row, "Province") || ""; // Changed to "ProvinceState"
+        let PostalCodeZip = getColumnValue(row, "PostalCode") || ""; // Changed to "PostalCodeZip"
 
         // Other fields
-        const Email = this.getColumnValue(row, "Email");
-        const Phone = this.getColumnValue(row, "Phone number");
-        const FirmName = this.getColumnValue(row, "Company name"); // Assuming Firm name is in the "Company name" column
-        const PartnerType = this.getColumnValue(row, "Profession"); // Assuming this is the "Partner Type"
+        const Email = getColumnValue(row, "Email");
+        const FirmName = getColumnValue(row, "Company name"); // Assuming Firm name is in the "Company name" column
+        const PartnerType = getColumnValue(row, "Profession"); // Assuming this is the "Partner Type"
         
         // Generate TempNote if any note-related fields exist
-        const TempNote = this.getColumnValue(row, "Tag"); // Assuming tag is used for notes here
+        const TempNote = getColumnValue(row, "Tag"); // Assuming tag is used for notes here
 
         // Prepare the final result object
         let result: FormattedRow = {
             FirstName,
             LastName,
             Email,
-            Phone,
+            Phone,  // Now dynamically recognized as Phone
             Street,  // Now correctly labeled as "Street"
             City,
-            ProvinceState,
-            PostalCodeZip,
-            DateOfBirth,
+            ProvinceState, // Now correctly labeled as "ProvinceState"
+            PostalCodeZip, // Now correctly labeled as "PostalCodeZip"
+            DateOfBirth, // Dynamically detected Date of Birth field
             "BorrowerStage.Name": FILE_CONSTANTS.DEFAULT_STAGE, // Default if not specified
             "PartnerType.Name": PartnerType,
             LeadSource: "", // Add logic if needed for lead source
@@ -100,9 +121,10 @@ class ContactDataProcessor {
             FirmName,
         };
 
-        // Iterate over the row and add any unmapped columns at the end of the result
+        // Iterate over the row and add any unmapped columns with non-empty values at the end of the result
         Object.keys(row).forEach((key) => {
-            if (!result.hasOwnProperty(key)) {
+            // Add the key only if the value is not empty
+            if (!result.hasOwnProperty(key) && row[key] && row[key].trim() !== "") {
                 result[key] = row[key]; // Add extra columns not already included
             }
         });
